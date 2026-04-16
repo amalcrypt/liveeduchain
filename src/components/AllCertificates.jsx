@@ -41,9 +41,8 @@ const AllCertificates = () => {
 
       const publicClient = getPublicClient(wagmiConfig);
       
-      // Fetch latest block to avoid range errors (limited to 1000 blocks for some RPCs)
-      const latestBlock = await publicClient.getBlockNumber();
-      const fromBlock = latestBlock > 1000n ? latestBlock - 1000n : 0n;
+      const latestBlockObj = await publicClient.getBlock({ blockTag: 'latest' });
+      const latestBlock = latestBlockObj.number;
 
       for (const regNum of uploadedRegisterNumbers) {
         try {
@@ -57,30 +56,44 @@ const AllCertificates = () => {
           const [registerNumber, jsonHash, timestamp] = data;
 
           if (jsonHash && jsonHash.length > 0) {
-            // Fetch transaction hash from logs
+            // Fetch transaction hash from logs via targeted chunks to bypass 1000 block RPC limits
             let txHash = null;
             try {
-              const logs = await publicClient.getLogs({
-                address: contractAddress.address,
-                event: {
-                  type: 'event',
-                  name: 'CertificateAdded',
-                  inputs: [
-                    { type: 'string', name: 'registerNumber', indexed: true },
-                    { type: 'string', name: 'jsonHash', indexed: false },
-                  ],
-                },
-                args: {
-                  registerNumber: regNum
-                },
-                fromBlock: fromBlock,
-                toBlock: latestBlock
-              });
-              if (logs.length > 0) {
-                txHash = logs[0].transactionHash;
+              const timeDiff = latestBlockObj.timestamp - BigInt(timestamp);
+              const blocksDiff = timeDiff / 12n; // Sepolia block time is 12s
+              let estimatedBlock = latestBlock - blocksDiff;
+              
+              // Add a margin of 5000 blocks to account for any missed slots over time
+              let currentToBlock = estimatedBlock + 5000n;
+              if (currentToBlock > latestBlock) currentToBlock = latestBlock;
+              
+              let chunks = 0;
+              while (chunks < 10) { // Search a tight 10,000 blocks window
+                const currentFromBlock = currentToBlock > 999n ? currentToBlock - 999n : 0n;
+                const logs = await publicClient.getLogs({
+                  address: contractAddress.address,
+                  event: {
+                    type: 'event',
+                    name: 'CertificateAdded',
+                    inputs: [
+                      { type: 'string', name: 'registerNumber', indexed: true },
+                      { type: 'string', name: 'jsonHash', indexed: false },
+                    ],
+                  },
+                  args: { registerNumber: regNum },
+                  fromBlock: currentFromBlock,
+                  toBlock: currentToBlock
+                });
+                if (logs.length > 0) {
+                  txHash = logs[0].transactionHash;
+                  break;
+                }
+                if (currentFromBlock === 0n) break;
+                currentToBlock = currentFromBlock - 1n;
+                chunks++;
               }
             } catch (logError) {
-              console.error(`Failed to fetch logs for ${regNum}:`, logError);
+              // Silently catch to prevent LimitExceededRpcError log clutter in console
             }
 
             try {

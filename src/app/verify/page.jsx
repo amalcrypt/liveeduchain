@@ -39,9 +39,8 @@ export default function Verify() {
 
       const publicClient = getPublicClient(wagmiConfig);
       
-      // Fetch latest block to avoid range errors (limited to 1000 blocks for some RPCs)
-      const latestBlock = await publicClient.getBlockNumber();
-      const fromBlock = latestBlock > 1000n ? latestBlock - 1000n : 0n;
+      const latestBlockObj = await publicClient.getBlock({ blockTag: 'latest' });
+      const latestBlock = latestBlockObj.number;
 
       if (isCid) {
         const jsonHashFromInput = searchInput;
@@ -67,23 +66,39 @@ export default function Verify() {
           fetchedJsonHash = jsonHashFromInput;
           fetchedRegNum = regNumFromMetadata;
 
-          // Fetch tx hash
+          // Fetch tx hash via targeted chunks to bypass 1000 block RPC limits
           try {
-            const logs = await publicClient.getLogs({
-              address: contractAddress.address,
-              event: {
-                type: 'event',
-                name: 'CertificateAdded',
-                inputs: [
-                  { type: 'string', name: 'registerNumber', indexed: true },
-                  { type: 'string', name: 'jsonHash', indexed: false },
-                ],
-              },
-              args: { registerNumber: regNumFromMetadata },
-              fromBlock: fromBlock
-            });
-            if (logs.length > 0) fetchedTxHash = logs[0].transactionHash;
-          } catch (e) { console.error(e); }
+            const timeDiff = latestBlockObj.timestamp - BigInt(timestampFromChain);
+            const blocksDiff = timeDiff / 12n;
+            let estimatedBlock = latestBlock - blocksDiff;
+            let currentToBlock = estimatedBlock + 5000n;
+            if (currentToBlock > latestBlock) currentToBlock = latestBlock;
+            let chunks = 0;
+            while (chunks < 10) {
+              const currentFromBlock = currentToBlock > 999n ? currentToBlock - 999n : 0n;
+              const logs = await publicClient.getLogs({
+                address: contractAddress.address,
+                event: {
+                  type: 'event',
+                  name: 'CertificateAdded',
+                  inputs: [
+                    { type: 'string', name: 'registerNumber', indexed: true },
+                    { type: 'string', name: 'jsonHash', indexed: false },
+                  ],
+                },
+                args: { registerNumber: regNumFromMetadata },
+                fromBlock: currentFromBlock,
+                toBlock: currentToBlock
+              });
+              if (logs.length > 0) {
+                fetchedTxHash = logs[0].transactionHash;
+                break;
+              }
+              if (currentFromBlock === 0n) break;
+              currentToBlock = currentFromBlock - 1n;
+              chunks++;
+            }
+          } catch (e) {}
 
         } else {
           setCertificateData(null);
@@ -116,23 +131,39 @@ export default function Verify() {
         const date = new Date(Number(timestampFromChain) * 1000);
         fetchedTimestamp = date.toLocaleDateString('en-GB') + ' ' + date.toLocaleTimeString('en-GB');
 
-        // Fetch tx hash
+        // Fetch tx hash via targeted chunks to bypass 1000 block RPC limits
         try {
-          const logs = await publicClient.getLogs({
-            address: contractAddress.address,
-            event: {
-              type: 'event',
-              name: 'CertificateAdded',
-              inputs: [
-                { type: 'string', name: 'registerNumber', indexed: true },
-                { type: 'string', name: 'jsonHash', indexed: false },
-              ],
-            },
-            args: { registerNumber: regNumFromChain },
-            fromBlock: fromBlock
-          });
-          if (logs.length > 0) fetchedTxHash = logs[0].transactionHash;
-        } catch (e) { console.error(e); }
+          const timeDiff = latestBlockObj.timestamp - BigInt(timestampFromChain);
+          const blocksDiff = timeDiff / 12n;
+          let estimatedBlock = latestBlock - blocksDiff;
+          let currentToBlock = estimatedBlock + 5000n;
+          if (currentToBlock > latestBlock) currentToBlock = latestBlock;
+          let chunks = 0;
+          while (chunks < 10) {
+            const currentFromBlock = currentToBlock > 999n ? currentToBlock - 999n : 0n;
+            const logs = await publicClient.getLogs({
+              address: contractAddress.address,
+              event: {
+                type: 'event',
+                name: 'CertificateAdded',
+                inputs: [
+                  { type: 'string', name: 'registerNumber', indexed: true },
+                  { type: 'string', name: 'jsonHash', indexed: false },
+                ],
+              },
+              args: { registerNumber: regNumFromChain },
+              fromBlock: currentFromBlock,
+              toBlock: currentToBlock
+            });
+            if (logs.length > 0) {
+              fetchedTxHash = logs[0].transactionHash;
+              break;
+            }
+            if (currentFromBlock === 0n) break;
+            currentToBlock = currentFromBlock - 1n;
+            chunks++;
+          }
+        } catch (e) {}
       }
       
       setCertificateData({
