@@ -28,6 +28,11 @@ const StudentForm = () => {
 
   useEffect(() => {
     if (isConfirmed) {
+      if (registerNumber && hash) {
+        const txHashes = JSON.parse(localStorage.getItem('certificateTxHashes') || '{}');
+        txHashes[registerNumber] = hash;
+        localStorage.setItem('certificateTxHashes', JSON.stringify(txHashes));
+      }
       setStudentName('');
       setDegree('');
       setUniversity('');

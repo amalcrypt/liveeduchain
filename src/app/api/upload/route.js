@@ -25,6 +25,7 @@ export async function POST(request) {
 
     // 1. Upload the certificate file to IPFS
     const stream = Readable.from(buffer);
+    stream.path = file.name;
     const fileResult = await pinata.pinFileToIPFS(stream, {
       pinataMetadata: {
         name: file.name,

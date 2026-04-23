@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { readContract, getPublicClient } from 'wagmi/actions';
-import { wagmiConfig } from '../../components/Providers';
+import { wagmiConfig } from '../../lib/config';
 import AdminAuth from '../../artifacts/AdminAuth.json';
 import contractAddress from '../../artifacts/contract-address.json';
 import { Search, Loader, Frown, CheckCircle, FileJson, Fingerprint, ExternalLink, Database } from 'lucide-react';
